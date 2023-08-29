@@ -1,42 +1,40 @@
 const socket = io();
-let offerPc = null;
 
-const localVideo = document.getElementById('localVideo');
+const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-(async function() {
-  const localStream = await navigator.mediaDevices.getDisplayMedia({video: true, audio: false});
+socket.emit('createRoom');
 
-  localVideo.srcObject = localStream;
+(async function init() {
+    const localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const localVideo = document.querySelector('#localVideo');
+    let localPc = null;
 
-  socket.emit("createClassroom", 'name');
+    localVideo.srcObject = localStream;
 
-  socket.on("studentJoinedIn", async data => {
-    offerPc = new RTCPeerConnection();
-  
-    offerPc.onicecandidate = e => {
-      if (e.candidate) {
-        socket.emit("ice", {from: socket.id, to: data.studentSid, ice: e.candidate});
-      }
-    };
+    socket.on('joinedRoom', async data => {
+        localPc = new RTCPeerConnection(iceConfig);
+        
+        localPc.onicecandidate = e => {
+            if(e.candidate) {
+                socket.emit('transferIce', { from: socket.id, to: data.viewerId, ice: e.candidate })
+            }
+        }
 
-    offerPc.onconnectionstatechange = e => {
-      console.log(offerPc.connectionState )
-    }
+        localStream.getTracks().forEach(t => {
+            localPc.addTrack(t, localStream);
+        });
 
-    localStream.getTracks().forEach(t => {
-      offerPc.addTrack(t);
+        const offer = await localPc.createOffer();
+        await localPc.setLocalDescription(offer);
+        socket.emit('transferOffer', { from: socket.id, to: data.viewerId, offer });
+
     });
 
-    let offer = await offerPc.createOffer();
-    socket.emit("teacherOffer", {from: socket.id, to: data.studentSid, offer: offer});
-    await offerPc.setLocalDescription(new RTCSessionDescription(offer));
-  });
+    socket.on('receiveAnswer', (data) => {
+        localPc.setRemoteDescription(data.answer);
+    });
 
-  socket.on("studentAnswer", async data => {
-    await offerPc.setRemoteDescription(new RTCSessionDescription(data.answer));
-  });
-
-  socket.on("ice", data => {
-    offerPc.addIceCandidate(new RTCIceCandidate(data.ice));
-  });
+    socket.on('receiveIce', (data) => {
+        localPc.addIceCandidate(new RTCIceCandidate(data.ice));
+    });
 })();

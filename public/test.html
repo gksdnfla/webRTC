@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <h1>WebRTC Simple Demo</h1>
+    <video id="localVideo" autoplay playsinline width="320" height="240"></video>
+    <video id="remoteVideo" autoplay playsinline width="320" height="240"></video>
+    <button id="startButton">Start Call</button>
+    <button id="hangupButton">Hang Up</button>
+    <script>
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const startButton = document.getElementById('startButton');
+        const hangupButton = document.getElementById('hangupButton');
+
+        let localStream;
+        let pc1;
+        let pc2;
+
+        const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        startButton.addEventListener('click', startCall);
+        hangupButton.addEventListener('click', hangUp);
+
+        async function startCall() {
+            startButton.disabled = true;
+            hangupButton.disabled = false;
+
+            try {
+                localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+
+                pc1 = new RTCPeerConnection(iceConfig);
+                pc2 = new RTCPeerConnection(iceConfig);
+
+                pc1.addEventListener('icecandidate', (event) => onIceCandidate(pc1, pc2, event));
+                pc2.addEventListener('icecandidate', (event) => onIceCandidate(pc2, pc1, event));
+
+                pc2.addEventListener('track', (event) => gotRemoteStream(event));
+
+                localStream.getTracks().forEach((track) => pc1.addTrack(track, localStream));
+                const offer = await pc1.createOffer();
+                await pc1.setLocalDescription(offer);
+                await pc2.setRemoteDescription(offer);
+
+                const answer = await pc2.createAnswer();
+                await pc2.setLocalDescription(answer);
+                await pc1.setRemoteDescription(answer);
+            } catch (error) {
+                console.error('Error starting call:', error);
+            }
+        }
+
+        function onIceCandidate(pc, otherPc, event) {
+            if (event.candidate) {
+                otherPc.addIceCandidate(event.candidate)
+                    .catch((error) => console.error('Error adding ice candidate:', error));
+            }
+        }
+
+        function gotRemoteStream(event) {
+            const stream = event.streams[0];
+            remoteVideo.srcObject = stream;
+        }
+
+        function hangUp() {
+            pc1.close();
+            pc2.close();
+            localStream.getTracks().forEach((track) => track.stop());
+
+            startButton.disabled = false;
+            hangupButton.disabled = true;
+        }
+    </script>
+</body>
+</html>

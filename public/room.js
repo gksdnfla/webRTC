@@ -1,41 +1,31 @@
 const socket = io();
 
-const remoteStream = new MediaStream();
+const iceConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-const remoteVideo = document.getElementById('remoteVideo');
+const remotePc = new RTCPeerConnection(iceConfig);
+const remoteVideo = document.querySelector('#remoteVideo');
 
-let answerPc = null;
-let teacherId = null;
+socket.emit('joinRoom');
 
-remoteVideo.srcObject = remoteStream;
+socket.on('receiveOffer', async (data) => {
+    remotePc.onicecandidate = (e) => {
+        if(e.candidate) {
+            socket.emit('transferIce', { from: socket.id, to: data.from, ice: e.candidate });
+        }
+    }
 
-socket.emit("joinClassroom", 'name');
+    remotePc.ontrack = t => {
+        const stream = t.streams[0];
+        remoteVideo.srcObject = stream;
+    }
 
-socket.on("teacherOffer", async data => {
-    teacherId = data.from;
+    await remotePc.setRemoteDescription(data.offer);
 
-    answerPc = new RTCPeerConnection();
-
-    answerPc.onicecandidate = e => {
-        if(e.candidate)
-            socket.emit("ice", {from: socket.id, to: teacherId, ice: e.candidate});
-    };
-
-    answerPc.ontrack = e => {
-        remoteStream.addTrack(e.track);
-    };
-
-    answerPc.onconnectionstatechange = e => {
-        console.log(answerPc.connectionState )
-      }
-  
-    await answerPc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-    let answer = await answerPc.createAnswer();
-    await answerPc.setLocalDescription(new RTCSessionDescription(answer));
-    socket.emit("studentAnswer", {from: socket.id, to: teacherId, answer: answer});
+    const answer = await remotePc.createAnswer();
+    await remotePc.setLocalDescription(answer);
+    socket.emit('transferAnswer', { from: socket.id, to: data.from, answer });
 });
 
-socket.on("ice", data => {
-    answerPc.addIceCandidate(new RTCIceCandidate(data.ice));
+socket.on('receiveIce', data => {
+    remotePc.addIceCandidate(new RTCIceCandidate(data.ice));
 });

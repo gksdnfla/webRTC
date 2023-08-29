@@ -8,30 +8,34 @@ const io = socketIo(server);
 
 const roomTeacherMap = new Map();
 
+let roomMaster = null;
+
 io.on('connection', (socket) => {
-    console.log('connected!!!', socket.id);
-    socket.on("createClassroom", (name, callback) => {
-        socket.join(name);
-
-        roomTeacherMap.set(name, socket.id);
+    socket.on('createRoom', () => {
+        console.log('create room', socket.id);
+        roomMaster = socket.id;
     });
 
-    socket.on("joinClassroom", (name) => {
-        socket.join(name);
-
-        io.to(roomTeacherMap.get(name)).emit("studentJoinedIn", {studentSid: socket.id});
+    socket.on('joinRoom', () => {
+        console.log('room master', roomMaster)
+        if(roomMaster)
+            io.to(roomMaster).emit('joinedRoom', { viewerId: socket.id });
     });
 
-    socket.on("teacherOffer", data => {
-        io.to(data.to).emit("teacherOffer", data);
+    socket.on('transferIce', data => {
+        io.to(data.to).emit('receiveIce', data);
     });
 
-    socket.on("studentAnswer", data => {
-        io.to(data.to).emit("studentAnswer", data);
+    socket.on('transferOffer', data => {
+        io.to(data.to).emit('receiveOffer', data);
     });
 
-    socket.on("ice", data => {
-        io.to(data.to).emit("ice", data);
+    socket.on('transferAnswer', data => {
+        io.to(data.to).emit('receiveAnswer', data);
+    });
+
+    socket.on('disconnect', () => {
+        if(socket.id === roomMaster) roomMaster = null;
     });
 });
 
